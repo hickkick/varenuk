@@ -5,7 +5,7 @@ require 'dotenv/load'
 require 'logger'
 
 disable :protection
-use Rack::Protection, except: [:host_authorization]
+
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 4567
 
