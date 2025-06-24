@@ -4,7 +4,8 @@ require 'json'
 require 'dotenv/load'
 require 'logger'
 
-disable :protection
+use Rack::Protection::HostAuthorization, allowed_hosts: ['varenuk-production.up.railway.app']
+
 
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 4567
