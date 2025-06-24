@@ -4,6 +4,9 @@ require 'json'
 require 'dotenv/load'
 require 'logger'
 require 'rack/protection'
+require 'sinatra/activerecord'
+
+require_relative './models/user'
 
 before do
   puts "Request host: #{request.host}"
@@ -13,6 +16,7 @@ end
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 8080
 set :environment, ENV['RACK_ENV'] || :development
+set :database_file, 'config/database.yml'
 
 use Rack::Protection::HostAuthorization, hosts: [
   'varenuk-production.up.railway.app'
@@ -210,7 +214,7 @@ end
       )]
     end
     kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :order_button), callback_data: "cart")]
-    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: "🌐 Змінити мову", callback_data: "change_language")]
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :back_button), callback_data: "change_language")]
     Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
   end
   
@@ -252,11 +256,11 @@ end
     total = 0
     session[:cart].each do |item_id|
       item = MENU_ITEMS.find { |i| i[:id] == item_id }
-      text += "#{get_menu_item_name(item, lang)} - #{item[:price]}₴\n"
+      text += "#{get_menu_item_name(item, lang)} - #{item[:price]} zł \n"
       total += item[:price]
     end
     text = get_text(user_id, :cart_empty) if text.empty?
-    text += "\n#{get_text(user_id, :total)} #{total}₴" unless total.zero?
+    text += "\n#{get_text(user_id, :total)} #{total} zł" unless total.zero?
     text
   end
   

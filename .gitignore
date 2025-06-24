@@ -2,3 +2,27 @@
 bot.log
 tmp/
 *.sqlite
+# Базове
+.env
+*.log
+log/
+tmp/
+.bundle/
+vendor/
+coverage/
+db/*.pgsql
+
+# Докерне
+*.pid
+*.sock
+
+# Ruby специфічне
+.ruby-version
+.ruby-gemset
+
+# Railway
+railway.json
+
+# VSCode, IDEшне (опціонально)
+.vscode/
+.idea/

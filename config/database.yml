@@ -1,0 +1,11 @@
+production:
+  url: <%= ENV['DATABASE_URL'] %>
+
+development:
+  adapter: postgresql
+  encoding: unicode
+  database: myapp_development
+  pool: 5
+  username: postgres
+  password: 
+  host: localhost
