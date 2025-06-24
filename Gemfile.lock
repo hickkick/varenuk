@@ -82,6 +82,7 @@ DEPENDENCIES
   json
   logger
   puma
+  rack-protection
   rackup
   sinatra
   telegram-bot-ruby

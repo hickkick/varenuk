@@ -3,6 +3,7 @@ require 'telegram/bot'
 require 'json'
 require 'dotenv/load'
 require 'logger'
+require 'rack/protection'
 
 before do
   puts "Request host: #{request.host}"
