@@ -10,3 +10,4 @@ RUN bundle install
 ENV PORT=8080
 EXPOSE 8080
 
+CMD bundle exec rake db:migrate && ruby app.rb
