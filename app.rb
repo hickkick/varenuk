@@ -1,11 +1,11 @@
 require 'sinatra'
-set :protection, except: :host_authorization
-
 require 'telegram/bot'
 require 'json'
 require 'dotenv/load'
 require 'logger'
-
+configure do
+    set :protection, except: :host_authorization
+end
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 4567
 
