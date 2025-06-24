@@ -1,5 +1,6 @@
 require 'sinatra'
 set :protection, except: :host_authorization
+
 require 'telegram/bot'
 require 'json'
 require 'dotenv/load'
