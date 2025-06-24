@@ -4,12 +4,18 @@ require 'json'
 require 'dotenv/load'
 require 'logger'
 
+set :protection, except: :host_authorization
+
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 4567
 
 # Логування
-logger = Logger.new(ENV['LOG_FILE'] || STDOUT)
+LOG_FILE = ENV['LOG_FILE'] || 'bot.log'
+logger = Logger.new(LOG_FILE)
 logger.level = Logger::INFO
+logger.formatter = proc do |severity, datetime, progname, msg|
+  "#{datetime.strftime('%Y-%m-%d %H:%M:%S')} [#{severity}] #{msg}\n"
+end
 
 # Константи
 BOT_TOKEN = ENV['BOT_TOKEN']
@@ -159,95 +165,184 @@ MENU_ITEMS = [
 ]
 
 def get_user_session(user_id)
-  $user_sessions[user_id] ||= { language: nil, cart: [], state: :start, phone: nil, address: nil }
+    $user_sessions[user_id] ||= { language: nil, cart: [], state: :start, phone: nil, address: nil }
 end
-
+  
 def get_text(user_id, key)
-  session = get_user_session(user_id)
-  lang = session[:language] || 'uk'
-  LANGUAGES[lang][key]
+    session = get_user_session(user_id)
+    lang = session[:language] || 'uk'
+    LANGUAGES[lang][key]
 end
-
-def language_selection_keyboard
-  kb = LANGUAGES.map do |code, lang|
-    [Telegram::Bot::Types::InlineKeyboardButton.new(text: lang[:name], callback_data: "lang_#{code}")]
-  end
-  Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
+  
+def get_menu_item_name(item, language)
+    case language
+    when 'uk' then item[:name_uk]
+    when 'pl' then item[:name_pl]
+    when 'en' then item[:name_en]
+    when 'ru' then item[:name_ru]
+    when 'by' then item[:name_by]
+    else item[:name_en]
+    end
 end
-
-def main_menu_keyboard(user_id)
-  session = get_user_session(user_id)
-  kb = MENU_ITEMS.map do |item|
-    [Telegram::Bot::Types::InlineKeyboardButton.new(text: "#{item[:name_uk]} - #{item[:price]} zł", callback_data: "add_#{item[:id]}")]
+  
+  # Клавіатури
+  def language_selection_keyboard
+    kb = LANGUAGES.map do |code, lang|
+      [Telegram::Bot::Types::InlineKeyboardButton.new(text: lang[:name], callback_data: "lang_#{code}")]
+    end
+    Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
   end
-  cart_count = session[:cart].length
-  cart_text = cart_count > 0 ? "#{get_text(user_id, :order_button)} (#{cart_count})" : get_text(user_id, :order_button)
-  kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: cart_text, callback_data: "cart")]
-  Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
-end
-
-def format_cart(user_id)
-  session = get_user_session(user_id)
-  return get_text(user_id, :cart_empty) if session[:cart].empty?
-
-  text = get_text(user_id, :cart_title) + "\n"
-  total = 0
-  delivery = 15
-  item_counts = session[:cart].tally
-  item_counts.each do |item_id, count|
-    item = MENU_ITEMS.find { |i| i[:id] == item_id }
-    item_total = item[:price] * count
-    total += item_total
-    text += "• #{item[:name_uk]} : #{count} - #{item_total} zł\n"
+  
+  def main_menu_keyboard(user_id)
+    lang = get_user_session(user_id)[:language]
+    kb = MENU_ITEMS.map do |item|
+      [Telegram::Bot::Types::InlineKeyboardButton.new(
+        text: "#{get_menu_item_name(item, lang)} - #{item[:price]}₴",
+        callback_data: "add_#{item[:id]}"
+      )]
+    end
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :order_button), callback_data: "cart")]
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: "🌐 Змінити мову", callback_data: "change_language")]
+    Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
   end
-  if session[:cart].length < 3
-    total += delivery
-    text += "\n#{get_text(user_id, :delivery)} #{delivery} zł"
+  
+  def cart_keyboard(user_id)
+    kb = []
+    session = get_user_session(user_id)
+    lang = session[:language]
+    session[:cart].each do |item_id|
+      item = MENU_ITEMS.find { |i| i[:id] == item_id }
+      kb << [Telegram::Bot::Types::InlineKeyboardButton.new(
+        text: "❌ #{get_menu_item_name(item, lang)}",
+        callback_data: "remove_#{item_id}"
+      )]
+    end
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :make_order), callback_data: "make_order")] unless session[:cart].empty?
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :clear_cart), callback_data: "clear_cart")]
+    kb << [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :back_button), callback_data: "back_to_menu")]
+    Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
   end
-  text += "\n#{get_text(user_id, :total)} #{total} zł"
-  text
-end
+  
+  def phone_request_keyboard(user_id)
+    kb = [
+      [Telegram::Bot::Types::KeyboardButton.new(text: get_text(user_id, :share_phone), request_contact: true)]
+    ]
+    Telegram::Bot::Types::ReplyKeyboardMarkup.new(keyboard: kb, resize_keyboard: true, one_time_keyboard: true)
+  end
+  
+  def order_confirmation_keyboard(user_id)
+    kb = [
+      [Telegram::Bot::Types::InlineKeyboardButton.new(text: get_text(user_id, :confirm_order), callback_data: "confirm_order")]
+    ]
+    Telegram::Bot::Types::InlineKeyboardMarkup.new(inline_keyboard: kb)
+  end
+  
+  def format_cart(user_id)
+    session = get_user_session(user_id)
+    lang = session[:language]
+    text = ""
+    total = 0
+    session[:cart].each do |item_id|
+      item = MENU_ITEMS.find { |i| i[:id] == item_id }
+      text += "#{get_menu_item_name(item, lang)} - #{item[:price]}₴\n"
+      total += item[:price]
+    end
+    text = get_text(user_id, :cart_empty) if text.empty?
+    text += "\n#{get_text(user_id, :total)} #{total}₴" unless total.zero?
+    text
+  end
+  
 
 post '/webhook' do
-  request.body.rewind
-  payload = JSON.parse(request.body.read)
-  bot = Telegram::Bot::Client.new(BOT_TOKEN)
-  update = Telegram::Bot::Types::Update.new(payload)
+  request_data = JSON.parse(request.body.read)
+  logger.info("Received update: #{request_data}")
 
-  begin
-    if update.message
-      user_id = update.message.from.id
-      session = get_user_session(user_id)
-      if session[:language].nil?
-        bot.api.send_message(chat_id: user_id, text: get_text(user_id, :welcome), reply_markup: language_selection_keyboard)
-      else
-        bot.api.send_message(chat_id: user_id, text: get_text(user_id, :menu_title), reply_markup: main_menu_keyboard(user_id))
-      end
-    elsif update.callback_query
-      user_id = update.callback_query.from.id
-      data = update.callback_query.data
-      session = get_user_session(user_id)
-      if data.start_with?('lang_')
-        lang = data.split('_').last
-        session[:language] = lang
-        bot.api.send_message(chat_id: user_id, text: get_text(user_id, :menu_title), reply_markup: main_menu_keyboard(user_id))
-      elsif data.start_with?('add_')
-        item_id = data.split('_').last.to_i
-        session[:cart] << item_id
-        bot.api.answer_callback_query(callback_query_id: update.callback_query.id, text: get_text(user_id, :add_to_cart))
-        bot.api.edit_message_reply_markup(chat_id: user_id, message_id: update.callback_query.message.message_id, reply_markup: main_menu_keyboard(user_id))
-      elsif data == 'cart'
-        bot.api.send_message(chat_id: user_id, text: format_cart(user_id))
-      end
-    end
-  rescue => e
-    logger.error("Error: #{e.message}")
+  if request_data['message']
+    handle_message(request_data['message'])
+  elsif request_data['callback_query']
+    handle_callback(request_data['callback_query'])
   end
 
   status 200
+  end
+
+def handle_message(message)
+  user_id = message['from']['id']
+  session = get_user_session(user_id)
+
+  if message['contact']
+    session[:phone] = message['contact']['phone_number']
+    send_message(user_id, get_text(user_id, :enter_address))
+    session[:state] = :waiting_for_address
+  elsif session[:state] == :waiting_for_address
+    session[:address] = message['text']
+    send_order_summary(user_id)
+  else
+    send_message(user_id, get_text(user_id, :welcome), language_selection_keyboard)
+  end
 end
 
-# Wakeup endpoint
-get '/wakeup' do
-  "I'm alive"
+def handle_callback(callback)
+  user_id = callback['from']['id']
+  data = callback['data']
+  session = get_user_session(user_id)
+
+  if data.start_with?('lang_')
+    session[:language] = data.split('_')[1]
+    send_message(user_id, get_text(user_id, :menu_title), main_menu_keyboard(user_id))
+  elsif data.start_with?('add_')
+    session[:cart] << data.split('_')[1].to_i
+    answer_callback(callback['id'], get_text(user_id, :add_to_cart))
+  elsif data.start_with?('remove_')
+    item_id = data.split('_')[1].to_i
+    session[:cart].delete_at(session[:cart].index(item_id) || session[:cart].length)
+    send_message(user_id, format_cart(user_id), cart_keyboard(user_id))
+  elsif data == 'cart'
+    send_message(user_id, format_cart(user_id), cart_keyboard(user_id))
+  elsif data == 'clear_cart'
+    session[:cart].clear
+    send_message(user_id, get_text(user_id, :cart_empty), cart_keyboard(user_id))
+  elsif data == 'make_order'
+    send_message(user_id, get_text(user_id, :enter_phone), phone_request_keyboard(user_id))
+  elsif data == 'confirm_order'
+    send_message(user_id, get_text(user_id, :order_sent))
+    notify_admin(user_id)
+    session[:cart].clear
+  elsif data == 'back_to_menu'
+    send_message(user_id, get_text(user_id, :menu_title), main_menu_keyboard(user_id))
+  elsif data == 'change_language'
+    send_message(user_id, get_text(user_id, :welcome), language_selection_keyboard)
+  else
+    answer_callback(callback['id'], "Unknown command")
+  end
+end
+
+def send_message(chat_id, text, reply_markup = nil)
+  Telegram::Bot::Client.run(BOT_TOKEN) do |bot|
+    bot.api.send_message(chat_id: chat_id, text: text, reply_markup: reply_markup)
+  end
+end
+
+def answer_callback(callback_query_id, text)
+  Telegram::Bot::Client.run(BOT_TOKEN) do |bot|
+    bot.api.answer_callback_query(callback_query_id: callback_query_id, text: text, show_alert: false)
+  end
+end
+
+def send_order_summary(user_id)
+  session = get_user_session(user_id)
+  text = get_text(user_id, :order_summary) + format_cart(user_id) + "\n"
+  text += "#{get_text(user_id, :phone)} #{session[:phone]}\n"
+  text += "#{get_text(user_id, :address)} #{session[:address]}\n"
+  send_message(user_id, text, order_confirmation_keyboard(user_id))
+end
+
+def notify_admin(user_id)
+  session = get_user_session(user_id)
+  text = "#{get_text(user_id, :new_order)}\n" + format_cart(user_id) + "\n"
+  text += "#{get_text(user_id, :phone)} #{session[:phone]}\n"
+  text += "#{get_text(user_id, :address)} #{session[:address]}\n"
+  Telegram::Bot::Client.run(BOT_TOKEN) do |bot|
+    bot.api.send_message(chat_id: ADMIN_CHAT_ID, text: text)
+  end
 end
