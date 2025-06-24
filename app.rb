@@ -7,13 +7,15 @@ require 'logger'
 before do
   puts "Request host: #{request.host}"
 end
-use Rack::Protection::HostAuthorization, allowed_hosts: ['varenuk-production.up.railway.app']
 
 
 set :bind, '0.0.0.0'
 set :port, ENV['PORT'] || 8080
 set :environment, ENV['RACK_ENV'] || :development
 
+use Rack::Protection::HostAuthorization, hosts: [
+  'varenuk-production.up.railway.app'
+]
 # Логування
 LOG_FILE = ENV['LOG_FILE'] || 'bot.log'
 logger = Logger.new(LOG_FILE)
