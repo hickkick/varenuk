@@ -2,6 +2,8 @@ source 'https://rubygems.org'
 
 ruby '3.4.1'
 gem 'sinatra'
+gem 'rackup'
+gem 'puma'
 gem 'telegram-bot-ruby'
 gem 'dotenv'
 gem 'logger'
